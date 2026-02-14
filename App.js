@@ -12,6 +12,7 @@ import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as SplashScreen from 'expo-splash-screen';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Asset } from 'expo-asset';
 import * as ImagePicker from 'expo-image-picker';
 
@@ -543,6 +544,7 @@ const HomeScreen = ({ navigation }) => {
   const [showWelcomePrompt, setShowWelcomePrompt] = useState(false);
   const [newSayingText, setNewSayingText] = useState('');
   const quickSayScrollViewRef = useRef(null);
+  const hasLoadedBackgroundPrefs = useRef(false);
   const [customDayColor, setCustomDayColor] = useState('#f7e5e7');
   const [customNightColor, setCustomNightColor] = useState('#1e3a8a');
   const [customColorTab, setCustomColorTab] = useState('day'); // 'day' or 'night'
@@ -601,6 +603,9 @@ const HomeScreen = ({ navigation }) => {
 
     // Load saved font selection
     loadSavedFontStyle();
+
+    // Load saved background and night mode
+    loadSavedBackground();
 
     // Check for first-time user
     checkFirstTimeUser();
@@ -671,8 +676,14 @@ const HomeScreen = ({ navigation }) => {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const asset = result.assets[0];
-        setCustomPhotoUri(asset.uri);
-        // Calculate aspect ratio (width/height)
+        // Copy to document directory so it persists across app restarts
+        const validExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        const rawExt = (asset.uri.split('.').pop() || '').toLowerCase();
+        const ext = validExts.includes(rawExt) ? rawExt : 'jpg';
+        const permanentUri = FileSystem.documentDirectory + `customBackground.${ext}`;
+        await FileSystem.copyAsync({ from: asset.uri, to: permanentUri });
+
+        setCustomPhotoUri(permanentUri);
         const aspectRatio = asset.width / asset.height;
         setCustomPhotoAspectRatio(aspectRatio);
         setSelectedBackground('customPhoto');
@@ -714,6 +725,55 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
+  // Load saved background and night mode from AsyncStorage
+  const loadSavedBackground = async () => {
+    try {
+      const savedBackground = await AsyncStorage.getItem('selectedBackground');
+      const savedNightMode = await AsyncStorage.getItem('isNightMode');
+      const savedPhotoUri = await AsyncStorage.getItem('customPhotoUri');
+      const savedPhotoAspectRatio = await AsyncStorage.getItem('customPhotoAspectRatio');
+
+      if (savedBackground) {
+        if (savedBackground === 'customPhoto' && savedPhotoUri) {
+          // Verify the file still exists (e.g. user cleared app data)
+          const fileInfo = await FileSystem.getInfoAsync(savedPhotoUri);
+          if (fileInfo.exists) {
+            setSelectedBackground('customPhoto');
+            setCustomPhotoUri(savedPhotoUri);
+            setCustomPhotoAspectRatio(savedPhotoAspectRatio ? parseFloat(savedPhotoAspectRatio) : null);
+          }
+        } else if (backgroundConfigs[savedBackground]) {
+          setSelectedBackground(savedBackground);
+        }
+      }
+      if (savedNightMode !== null) {
+        setIsNightMode(savedNightMode === 'true');
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.log('Error loading saved background:', error);
+      }
+    } finally {
+      hasLoadedBackgroundPrefs.current = true;
+    }
+  };
+
+  // Save background and night mode to AsyncStorage
+  const saveBackground = async (background, nightMode, photoUri, photoAspectRatio) => {
+    try {
+      await AsyncStorage.setItem('selectedBackground', background);
+      await AsyncStorage.setItem('isNightMode', nightMode.toString());
+      if (background === 'customPhoto' && photoUri) {
+        await AsyncStorage.setItem('customPhotoUri', photoUri);
+        await AsyncStorage.setItem('customPhotoAspectRatio', String(photoAspectRatio ?? ''));
+      }
+    } catch (error) {
+      if (__DEV__) {
+        console.log('Error saving background:', error);
+      }
+    }
+  };
+
   // Save font style to AsyncStorage
   const saveFontStyle = async (fontStyle) => {
     try {
@@ -724,6 +784,12 @@ const HomeScreen = ({ navigation }) => {
       }
     }
   };
+
+  // Persist background and night mode whenever they change (skip until initial load completes)
+  useEffect(() => {
+    if (!hasLoadedBackgroundPrefs.current) return;
+    saveBackground(selectedBackground, isNightMode, customPhotoUri, customPhotoAspectRatio);
+  }, [selectedBackground, isNightMode, customPhotoUri, customPhotoAspectRatio]);
 
   // Save sayings to AsyncStorage
   const saveSayings = async (sayings) => {
