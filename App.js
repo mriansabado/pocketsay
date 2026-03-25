@@ -950,10 +950,17 @@ const HomeScreen = ({ navigation }) => {
     }
   };
 
-  const handleEnterPress = () => {
+  const handleEnterPress = async () => {
+    if (isTransitioning) return;
+    setIsTransitioning(true);
     // playSound(require('./assets/sounds/submit.mp3')); // Uncomment when you add submit.mp3
-    const resultsBackgroundColor = isNightMode ? '#1e3a8a' : backgroundColor;
-    transitionToResults(resultsBackgroundColor);
+    try {
+      const resultsBackgroundColor = isNightMode ? '#1e3a8a' : backgroundColor;
+      await transitionToResults(resultsBackgroundColor);
+    } finally {
+      // Keep lock briefly to prevent rapid double-tap submit races.
+      setTimeout(() => setIsTransitioning(false), 300);
+    }
   };
 
   const handleClearAll = () => {
@@ -1583,6 +1590,9 @@ const HomeScreen = ({ navigation }) => {
 
   const transitionToResults = async (resultsBackgroundColor) => {
     try {
+      // Prevent split/partial screen rendering when user submits with keyboard still open
+      Keyboard.dismiss();
+      await new Promise(resolve => setTimeout(resolve, 120));
       await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
       // Wait a bit for orientation to actually change before navigating
       await new Promise(resolve => setTimeout(resolve, 150));
@@ -1992,12 +2002,19 @@ const HomeScreen = ({ navigation }) => {
                   </TouchableOpacity>
                 )}
               </View>
-              <TouchableOpacity onPress={handleEnterPress} activeOpacity={0.8}>
+              <TouchableOpacity
+                onPress={handleEnterPress}
+                activeOpacity={0.8}
+                disabled={isTransitioning}
+              >
                 <LinearGradient
                   colors={buttonGradientColors}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  style={styles.submitButton}
+                  style={[
+                    styles.submitButton,
+                    isTransitioning && { opacity: 0.7 }
+                  ]}
                 >
                   <Text style={styles.buttonText}>Display</Text>
                 </LinearGradient>
