@@ -52,7 +52,13 @@
   },
   "overrides": {
     "fast-xml-parser@^4.0.0": "4.5.5",
-    "fast-xml-parser@^5.0.0": "5.5.6"
+    "fast-xml-parser@^5.0.0": "5.5.6",
+    "@expo/xcpretty": {
+      "js-yaml": "4.3.1"
+    },
+    "@istanbuljs/load-nyc-config": {
+      "js-yaml": "3.15.1"
+    }
   },
   "expo": {
     "doctor": {
